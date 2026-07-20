@@ -107,10 +107,6 @@ flowchart TD
 
 ---
 
-# Core Architectural Abstractions
-
----
-
 # 1. Source
 
 A Source is where information originates.
