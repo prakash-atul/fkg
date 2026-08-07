@@ -1,0 +1,11 @@
+# Ignore everything
+*
+
+# But don't ignore this file
+!.gitignore
+
+# Track these files
+!qwen_sft.py
+!qwen_infer.py
+!prepare_qwen_chat_dataset.py
+!ranveerbrar.json
