@@ -1,0 +1,38 @@
+{
+  "builder_name": "json",
+  "citation": "",
+  "config_name": "default",
+  "dataset_name": "json",
+  "dataset_size": 6436623,
+  "description": "",
+  "download_checksums": {
+    "/scratch/atul_prakash/fkg/data/ranveerbrar.json": {
+      "num_bytes": 6691049,
+      "checksum": null
+    }
+  },
+  "download_size": 6691049,
+  "features": {
+    "text": {
+      "dtype": "string",
+      "_type": "Value"
+    }
+  },
+  "homepage": "",
+  "license": "",
+  "size_in_bytes": 13127672,
+  "splits": {
+    "train": {
+      "name": "train",
+      "num_bytes": 6436623,
+      "num_examples": 751,
+      "dataset_name": "json"
+    }
+  },
+  "version": {
+    "version_str": "0.0.0",
+    "major": 0,
+    "minor": 0,
+    "patch": 0
+  }
+}
