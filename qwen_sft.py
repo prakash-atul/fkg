@@ -1,12 +1,12 @@
 import sys
-import pandas as pd
+import os
+import warnings
+
 from datasets import load_from_disk
 from unsloth import FastVisionModel
 from trl import SFTTrainer, SFTConfig
 from unsloth.chat_templates import train_on_responses_only
 from transformers import EarlyStoppingCallback
-import warnings
-import os
 
 warnings.filterwarnings("ignore", category=FutureWarning)
 
@@ -25,14 +25,15 @@ VARIANTS = {
 }
 
 # ============================================================
-# Step-1: File Paths (Update these for Google Colab)
+# Step-1: File Paths
 # ============================================================
-# NOTE: This MUST match OUTPUT_DIR in prepare_qwen_chat_dataset.py,
-# otherwise training will load the wrong (legal) data.
-DATA_DIR = "/scratch/atul_prakash/fkg/data/train_data/"
+# Project now lives under the home directory. Base checkpoints stay on
+# /scratch/proy/models (see VARIANTS above).
+# DATA_DIR MUST match OUTPUT_DIR in prepare_qwen_chat_dataset.py.
+PROJECT_ROOT = os.path.expanduser("~/fkg")
+DATA_DIR = os.path.join(PROJECT_ROOT, "data", "train_data")
 
 train_dataset = load_from_disk(os.path.join(DATA_DIR, "train_chat"))
-
 eval_dataset = load_from_disk(os.path.join(DATA_DIR, "validation_chat"))
 
 print(f"Train examples: {len(train_dataset)}")
@@ -42,10 +43,12 @@ print(train_dataset.column_names)
 print(train_dataset[0]["text"])
 
 
-# Step-3: Model Loading (Qwen 3.5 0.8B)
+# ============================================================
+# Step-2: Sequence length and batch scaling
 # ============================================================
 # max_seq_length is derived from the dataset in prepare_qwen_chat_dataset.py
-# (p95 of token lengths, rounded up). Fall back to 2048 if the file is missing.
+# (LENGTH_PERCENTILE of token lengths, rounded up to ROUND_TO, capped at
+# MAX_SEQ_CAP). Fall back to 2048 if the file is missing.
 seq_len_file = os.path.join(DATA_DIR, "max_seq_length.txt")
 if os.path.exists(seq_len_file):
     with open(seq_len_file) as f:
@@ -65,16 +68,33 @@ EFFECTIVE_BATCH = 64  # = old batch(32) * old grad_accum(2)
 
 per_device_train_batch_size = max(1, TOKEN_BUDGET // max_seq_length)
 gradient_accumulation_steps = max(1, EFFECTIVE_BATCH // per_device_train_batch_size)
+effective_batch = per_device_train_batch_size * gradient_accumulation_steps
 print(
     f"Auto-scaled: per_device_train_batch_size={per_device_train_batch_size}, "
     f"gradient_accumulation_steps={gradient_accumulation_steps} "
-    f"(effective batch ~{per_device_train_batch_size * gradient_accumulation_steps})"
+    f"(effective batch ~{effective_batch})"
 )
+
+# Evaluate/checkpoint a fixed number of times per epoch rather than on a fixed
+# step count. With a small dataset, eval_steps=5 fires many times inside epoch 1
+# and early stopping can halt training before the adapter has learned anything.
+EVALS_PER_EPOCH = 2
+steps_per_epoch = max(1, len(train_dataset) // effective_batch)
+eval_steps = max(1, steps_per_epoch // EVALS_PER_EPOCH)
+save_steps = eval_steps  # must match eval_steps for load_best_model_at_end
+print(
+    f"steps_per_epoch~{steps_per_epoch} -> eval_steps={eval_steps}, "
+    f"save_steps={save_steps}"
+)
+
 base_adapter = VARIANTS.get(VARIANT, VARIANTS["4b"])
-output_dir = f"/scratch/atul_prakash/fkg/models/" f"unsloth_Qwen3.5_{VARIANT}_FOOD_FT"
+output_dir = os.path.join(PROJECT_ROOT, "models", f"unsloth_Qwen3.5_{VARIANT}_FOOD_FT")
 
 new_model = output_dir
 
+# ============================================================
+# Step-3: Model Loading
+# ============================================================
 model, tokenizer = FastVisionModel.from_pretrained(
     model_name=base_adapter,
     max_seq_length=max_seq_length,
@@ -87,7 +107,9 @@ text_tokenizer = tokenizer.tokenizer
 text_tokenizer.pad_token = text_tokenizer.eos_token
 text_tokenizer.padding_side = "right"
 
-# Allocate LoRA adapters
+# ============================================================
+# Step-4: Allocate LoRA adapters
+# ============================================================
 model = FastVisionModel.get_peft_model(
     model,
     finetune_vision_layers=False,  # False if not finetuning vision layers
@@ -104,7 +126,7 @@ model = FastVisionModel.get_peft_model(
     # target_modules = "all-linear", # Optional now! Can specify a list if needed
 )
 
-# model.print_trainable_parameters()
+model.print_trainable_parameters()
 
 # ============================================================
 # Step-5: SFTTrainer Setup
@@ -116,15 +138,15 @@ args = SFTConfig(
     per_device_train_batch_size=per_device_train_batch_size,
     per_device_eval_batch_size=1,
     gradient_accumulation_steps=gradient_accumulation_steps,
-    learning_rate=2e-5,
+    learning_rate=2e-4,
     warmup_ratio=0.05,
     lr_scheduler_type="cosine",
     num_train_epochs=10,
     logging_steps=1,
     eval_strategy="steps",
-    eval_steps=5,
+    eval_steps=eval_steps,
     save_strategy="steps",
-    save_steps=5,
+    save_steps=save_steps,
     save_total_limit=2,
     load_best_model_at_end=True,
     metric_for_best_model="eval_loss",
@@ -153,7 +175,7 @@ trainer = SFTTrainer(
     ],
 )
 
-# Apply prompt masking to calculate loss ONLY on the assistant's summaries
+# Apply prompt masking to calculate loss ONLY on the assistant's response
 trainer = train_on_responses_only(
     trainer,
     instruction_part="<|im_start|>user\n",
@@ -168,3 +190,4 @@ trainer.train()
 # Save final adapters locally
 model.save_pretrained(new_model)
 text_tokenizer.save_pretrained(new_model)
+print(f"Saved adapter to {new_model}")
