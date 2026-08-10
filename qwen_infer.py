@@ -52,7 +52,7 @@ else:
 
 # How many tokens to generate. Recipes are long, but this must leave room
 # inside MAX_SEQ_LENGTH after the prompt.
-MAX_NEW_TOKENS = 1024
+MAX_NEW_TOKENS = 2048
 
 # ---- Prompts: MUST match prepare_qwen_chat_dataset.py exactly ----
 SYSTEM_PROMPT = (
@@ -169,8 +169,35 @@ def predict(ingredients):
 # ============================================================
 
 test_cases = [
-    ["Refined Flour", "Yogurt"],
-    ["Rice", "Mutton"],
+    # Kadhi
+    ["Gram Flour", "Curd"],
+
+    # Poha
+    ["Chickpea", "Poha", "Gram"],
+
+    # Bhindi Pakoda
+    ["Maida", "Dahi", "Bhindi"],
+
+    # Kadhai Paneer
+    ["Paneer", "Tomato"],
+
+    # Briyani
+    ["Mutton", "Yogurt", "Fried Onion", "Basmati Rice"],
+
+    # Adawasi Chicken From Nagaland
+    ["Chicken", "Black Pepper", "Ginger", "Garlic"],
+
+    # Must be Bengali Dish
+    ["Fish", "Mustard Oil", "Panch Phoron", "Jaggery"],
+
+    # Kheer
+    ["Milk", "Rice", "Sugar"],
+
+    # Nimki / Puri / Thekua
+    ["Refined Flour"],
+
+    # Sambhar
+    ["Toor Dal", "Drumstick"],
 ]
 
 n_in_format = 0
